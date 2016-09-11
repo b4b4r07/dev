@@ -6,6 +6,14 @@ typeset -a spinners points repos
 typeset -i p=0 c=0
 typeset    repo
 
+typeset ZPLUG_HOME="."
+typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
+typeset hook_success="$ZPLUG_MANAGE/.hook_success"
+typeset hook_failure="$ZPLUG_MANAGE/.hook_failure"
+typeset rollback="$ZPLUG_MANAGE/.rollback"
+
+mkdir -p "$ZPLUG_MANAGE"
+
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 points=(. . .. .. ... ... .... ....)
 points=('⣾' '⣽' '⣻' '⢿' '⡿' '⣟' '⣯' '⣷')
@@ -46,8 +54,8 @@ do
     states[$repo]="unfinished"
 done
 
-build_hooks[fujiwara/nssh]="make install"
-build_hooks[b4b4r07/gomi]="make install"
+build_hooks[fujiwara/nssh]="sleep 3; false"
+build_hooks[b4b4r07/gomi]="sleep 2"
 
 printf "[zplug] Start to install $#repos plugins in parallel\n\n"
 repeat $(($#repos + 2))
@@ -59,36 +67,51 @@ while any "$repo_pids[@]" "$hook_pids[@]"; do
     sleep 0.1
     printf "\033[%sA" $(($#repos + 2))
 
-    let c++
-    if (( c > $#spinners )); then
+    # Count up within spinners index
+    if (( ( c+=1 ) > $#spinners )); then
         c=1
     fi
-    let p++
-    if (( p > $#points )); then
+    # Count up within points index
+    if (( ( p+=1 ) > $#points )); then
         p=1
     fi
 
     for repo in "${(k)repo_pids[@]}"
     do
         if [[ $jobstates =~ $repo_pids[$repo] ]]; then
-            printf " $fg[white]${spinners[$c]}$reset_color  Installing...    $repo\n"
+            printf " $fg[white]${spinners[$c]}$reset_color  Installing...  $repo\n"
         else
             # If repo has build-hook tag
             if [[ -n $build_hooks[$repo] ]]; then
                 if ! $hook_finished[$repo]; then
                     hook_finished[$repo]=true
-                    sleep $(( $RANDOM % 5 + 1 )) & hook_pids[$repo]=$!
+                    {
+                        eval ${=build_hooks[$repo]}
+                        if (( $status > 0 )); then
+                            # failure
+                            printf "$repo\n" >>|"$hook_failure"
+                        else
+                            # success
+                            printf "$repo\n" >>|"$hook_success"
+                        fi
+                    } & hook_pids[$repo]=$!
                 fi
-                # running build-hook
+
                 if [[ $jobstates =~ $hook_pids[$repo] ]]; then
+                    # running build-hook
                     eraceCurrentLine
-                    printf " $fg_bold[white]${spinners[$c]}$reset_color  $fg[green]Installed!$reset_color       $repo --> hook-build ${points[$p]}\n"
+                    printf " $fg_bold[white]${spinners[$c]}$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: ${points[$p]}\n"
                 else
+                    # finished build-hook
                     eraceCurrentLine
-                    printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color       $repo --> $fg[green]hook-build!$reset_color\n"
+                    if [[ -f $hook_failure ]] && grep -x "$repo" "$hook_failure" &>/dev/null; then
+                        printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[red]failure$reset_color\n"
+                    else
+                        printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[green]success$reset_color\n"
+                    fi
                 fi
             else
-                printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color       $repo\n"
+                printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo\n"
             fi
             states[$repo]="finished"
         fi
@@ -99,6 +122,8 @@ while any "$repo_pids[@]" "$hook_pids[@]"; do
         printf "[zplug] Finished: ${(k)#states[(R)finished]}/$#states plugin(s)\n"
     else
         eraceCurrentLine
-        printf "[zplug] Elapsed time: %.1f sec.\n" $SECONDS
+        printf "[zplug] Elapsed time: %.4f sec.\n" $SECONDS
     fi
 done
+
+rm "$hook_success" "$hook_failure"
