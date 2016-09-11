@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-typeset -A repo_pids states build_hooks hook_finished hook_pids
+typeset -A repo_pids states hook_build hook_finished hook_pids
 typeset -F SECONDS=0
 typeset -a spinners points repos
 typeset -i p=0 c=0
@@ -10,16 +10,16 @@ typeset ZPLUG_HOME="."
 typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
 typeset hook_success="$ZPLUG_MANAGE/.hook_success"
 typeset hook_failure="$ZPLUG_MANAGE/.hook_failure"
-typeset rollback="$ZPLUG_MANAGE/.rollback"
+typeset hook_rollback="$ZPLUG_MANAGE/.hook_rollback"
 
 mkdir -p "$ZPLUG_MANAGE"
 
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 points=(. . .. .. ... ... .... ....)
 points=('⣾' '⣽' '⣻' '⢿' '⡿' '⣟' '⣯' '⣷')
-points=("⠋" "⠙" "⠚" "⠞" "⠖" "⠦" "⠴" "⠲" "⠳" "⠓")
-points=("⠋" "⠙" "⠚" "⠒" "⠂" "⠂" "⠒" "⠲" "⠴" "⠦" "⠖" "⠒" "⠐" "⠐" "⠒" "⠓" "⠋")
-points=("⠁" "⠁" "⠉" "⠙" "⠚" "⠒" "⠂" "⠂" "⠒" "⠲" "⠴" "⠤" "⠄" "⠄" "⠤" "⠠" "⠠" "⠤" "⠦" "⠖" "⠒" "⠐" "⠐" "⠒" "⠓" "⠋" "⠉" "⠈" "⠈")
+points=('⠋' '⠙' '⠚' '⠞' '⠖' '⠦' '⠴' '⠲' '⠳' '⠓')
+points=('⠋' '⠙' '⠚' '⠒' '⠂' '⠂' '⠒' '⠲' '⠴' '⠦' '⠖' '⠒' '⠐' '⠐' '⠒' '⠓' '⠋')
+points=('⠁' '⠁' '⠉' '⠙' '⠚' '⠒' '⠂' '⠂' '⠒' '⠲' '⠴' '⠤' '⠄' '⠄' '⠤' '⠠' '⠠' '⠤' '⠦' '⠖' '⠒' '⠐' '⠐' '⠒' '⠓' '⠋' '⠉' '⠈' '⠈')
 
 any() {
     local job
@@ -49,13 +49,13 @@ for repo in "$repos[@]"
 do
     sleep $(( $RANDOM % 5 + 1 )).$(( $RANDOM % 9 + 1 )) &
     repo_pids[$repo]=$!
-    build_hooks[$repo]=""
+    hook_build[$repo]=""
     hook_finished[$repo]=false
     states[$repo]="unfinished"
 done
 
-build_hooks[fujiwara/nssh]="sleep 3; false"
-build_hooks[b4b4r07/gomi]="sleep 2"
+hook_build[fujiwara/nssh]="sleep 3; false"
+hook_build[b4b4r07/gomi]="sleep 2"
 
 printf "[zplug] Start to install $#repos plugins in parallel\n\n"
 repeat $(($#repos + 2))
@@ -82,14 +82,15 @@ while any "$repo_pids[@]" "$hook_pids[@]"; do
             printf " $fg[white]${spinners[$c]}$reset_color  Installing...  $repo\n"
         else
             # If repo has build-hook tag
-            if [[ -n $build_hooks[$repo] ]]; then
+            if [[ -n $hook_build[$repo] ]]; then
                 if ! $hook_finished[$repo]; then
                     hook_finished[$repo]=true
                     {
-                        eval ${=build_hooks[$repo]}
+                        eval ${=hook_build[$repo]}
                         if (( $status > 0 )); then
                             # failure
                             printf "$repo\n" >>|"$hook_failure"
+                            printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$hook_rollback"
                         else
                             # success
                             printf "$repo\n" >>|"$hook_success"
