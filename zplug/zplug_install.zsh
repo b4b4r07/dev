@@ -65,7 +65,8 @@ do
     printf "\n"
 done
 
-while any "$repo_pids[@]" "$hook_pids[@]"; do
+while any "$repo_pids[@]" "$hook_pids[@]"
+do
     sleep 0.1
     printf "\033[%sA" $(($#repos + 2))
 
@@ -133,5 +134,5 @@ printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
 if [[ -s $hook_rollback ]]; then
     printf "\n$fg_bold[red][zplug] These hook-build were failed to run:\n$reset_color"
     sed 's/^/ - /g' "$hook_failure"
-    printf "[zplug] To retry these hook-build, please run 'zplug --rollback=hook-build'.\n"
+    printf "[zplug] To retry these hook-build, please run '$fg_bold[default]zplug --rollback=hook-build$reset_color'.\n"
 fi
