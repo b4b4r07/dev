@@ -2,24 +2,24 @@
 
 typeset -A repo_pids states hook_build hook_finished hook_pids
 typeset -F SECONDS=0
-typeset -a spinners points repos
-typeset -i p=0 c=0
+typeset -a spinners sub_spinners repos
+typeset -i spinner_idx subspinner_idx
 typeset    repo
 
 typeset ZPLUG_HOME="."
 typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
-typeset hook_success="$ZPLUG_MANAGE/.hook_success"
-typeset hook_failure="$ZPLUG_MANAGE/.hook_failure"
-typeset hook_rollback="$ZPLUG_MANAGE/.hook_rollback"
+typeset build_success="$ZPLUG_MANAGE/.build_success"
+typeset build_failure="$ZPLUG_MANAGE/.build_failure"
+typeset build_rollback="$ZPLUG_MANAGE/.build_rollback"
 
 mkdir -p "$ZPLUG_MANAGE"
-rm -f "$hook_success" "$hook_failure"
+rm -f "$build_success" "$build_failure"
 
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-points=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
-points=(⠋ ⠙ ⠚ ⠞ ⠖ ⠦ ⠴ ⠲ ⠳ ⠓)
-points=(⠋ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋)
-points=(⠁ ⠁ ⠉ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠤ ⠄ ⠄ ⠤ ⠠ ⠠ ⠤ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋ ⠉ ⠈ ⠈)
+sub_spinners=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
+sub_spinners=(⠋ ⠙ ⠚ ⠞ ⠖ ⠦ ⠴ ⠲ ⠳ ⠓)
+sub_spinners=(⠋ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋)
+sub_spinners=(⠁ ⠁ ⠉ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠤ ⠄ ⠄ ⠤ ⠠ ⠠ ⠤ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋ ⠉ ⠈ ⠈)
 
 any() {
     local job
@@ -55,7 +55,7 @@ do
     states[$repo]="unfinished"
 done
 
-hook_build[fujiwara/nssh]="sleep 3;"
+hook_build[fujiwara/nssh]="sleep 3"
 hook_build[b4b4r07/gomi]="sleep 2"
 hook_build[jhawthorn/fzy]="sleep 2"
 
@@ -71,18 +71,18 @@ do
     printf "\033[%sA" $(($#repos + 2))
 
     # Count up within spinners index
-    if (( ( c+=1 ) > $#spinners )); then
-        c=1
+    if (( ( spinner_idx+=1 ) > $#spinners )); then
+        spinner_idx=1
     fi
-    # Count up within points index
-    if (( ( p+=1 ) > $#points )); then
-        p=1
+    # Count up within sub_spinners index
+    if (( ( subspinner_idx+=1 ) > $#sub_spinners )); then
+        subspinner_idx=1
     fi
 
     for repo in "${(k)repo_pids[@]}"
     do
         if [[ $jobstates =~ $repo_pids[$repo] ]]; then
-            printf " $fg[white]${spinners[$c]}$reset_color  Installing...  $repo\n"
+            printf " $fg[white]$spinners[$spinner_idx]$reset_color  Installing...  $repo\n"
         else
             # If repo has build-hook tag
             if [[ -n $hook_build[$repo] ]]; then
@@ -92,11 +92,11 @@ do
                         eval ${=hook_build[$repo]}
                         if (( $status > 0 )); then
                             # failure
-                            printf "$repo\n" >>|"$hook_failure"
-                            printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$hook_rollback"
+                            printf "$repo\n" >>|"$build_failure"
+                            printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$build_rollback"
                         else
                             # success
-                            printf "$repo\n" >>|"$hook_success"
+                            printf "$repo\n" >>|"$build_success"
                         fi
                     } & hook_pids[$repo]=$!
                 fi
@@ -104,11 +104,11 @@ do
                 if [[ $jobstates =~ $hook_pids[$repo] ]]; then
                     # running build-hook
                     eraceCurrentLine
-                    printf " $fg_bold[white]${spinners[$c]}$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: ${points[$p]}\n"
+                    printf " $fg_bold[white]$spinners[$spinner_idx]$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $sub_spinners[$subspinner_idx]\n"
                 else
                     # finished build-hook
                     eraceCurrentLine
-                    if [[ -f $hook_failure ]] && grep -x "$repo" "$hook_failure" &>/dev/null; then
+                    if [[ -f $build_failure ]] && grep -x "$repo" "$build_failure" &>/dev/null; then
                         printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[red]failure$reset_color\n"
                     else
                         printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[green]success$reset_color\n"
@@ -131,8 +131,8 @@ do
 done
 printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
 
-if [[ -f $hook_failure ]] && [[ -s $hook_rollback ]]; then
+if [[ -f $build_failure ]] && [[ -s $build_rollback ]]; then
     printf "\n$fg_bold[red][zplug] These hook-build were failed to run:\n$reset_color"
-    sed 's/^/ - /g' "$hook_failure"
+    sed 's/^/ - /g' "$build_failure"
     printf "[zplug] To retry these hook-build, please run '$fg_bold[default]zplug --rollback=hook-build$reset_color'.\n"
 fi
