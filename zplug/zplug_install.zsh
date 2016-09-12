@@ -13,13 +13,13 @@ typeset hook_failure="$ZPLUG_MANAGE/.hook_failure"
 typeset hook_rollback="$ZPLUG_MANAGE/.hook_rollback"
 
 mkdir -p "$ZPLUG_MANAGE"
+rm -f "$hook_success" "$hook_failure"
 
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-points=(. . .. .. ... ... .... ....)
-points=('⣾' '⣽' '⣻' '⢿' '⡿' '⣟' '⣯' '⣷')
-points=('⠋' '⠙' '⠚' '⠞' '⠖' '⠦' '⠴' '⠲' '⠳' '⠓')
-points=('⠋' '⠙' '⠚' '⠒' '⠂' '⠂' '⠒' '⠲' '⠴' '⠦' '⠖' '⠒' '⠐' '⠐' '⠒' '⠓' '⠋')
-points=('⠁' '⠁' '⠉' '⠙' '⠚' '⠒' '⠂' '⠂' '⠒' '⠲' '⠴' '⠤' '⠄' '⠄' '⠤' '⠠' '⠠' '⠤' '⠦' '⠖' '⠒' '⠐' '⠐' '⠒' '⠓' '⠋' '⠉' '⠈' '⠈')
+points=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
+points=(⠋ ⠙ ⠚ ⠞ ⠖ ⠦ ⠴ ⠲ ⠳ ⠓)
+points=(⠋ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋)
+points=(⠁ ⠁ ⠉ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠤ ⠄ ⠄ ⠤ ⠠ ⠠ ⠤ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋ ⠉ ⠈ ⠈)
 
 any() {
     local job
@@ -42,12 +42,13 @@ b4b4r07/gomi
 b4b4r07/dotfiles
 zplug/zplug
 zsh-users/antigen
+jhawthorn/fzy
 fujiwara/nssh
 )
 
 for repo in "$repos[@]"
 do
-    sleep $(( $RANDOM % 5 + 1 )).$(( $RANDOM % 9 + 1 )) &
+    sleep $(( $RANDOM % 3 + 2 )).$(( $RANDOM % 9 + 1 )) &
     repo_pids[$repo]=$!
     hook_build[$repo]=""
     hook_finished[$repo]=false
@@ -56,6 +57,7 @@ done
 
 hook_build[fujiwara/nssh]="sleep 3; false"
 hook_build[b4b4r07/gomi]="sleep 2"
+hook_build[jhawthorn/fzy]="sleep 2; false"
 
 printf "[zplug] Start to install $#repos plugins in parallel\n\n"
 repeat $(($#repos + 2))
@@ -126,5 +128,10 @@ while any "$repo_pids[@]" "$hook_pids[@]"; do
         printf "[zplug] Elapsed time: %.4f sec.\n" $SECONDS
     fi
 done
+printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
 
-rm "$hook_success" "$hook_failure"
+if [[ -s $hook_rollback ]]; then
+    printf "\n$fg_bold[red][zplug] These hook-build were failed to run:\n$reset_color"
+    sed 's/^/ - /g' "$hook_failure"
+    printf "[zplug] To retry these hook-build, please run 'zplug --rollback=hook-build'.\n"
+fi
