@@ -55,9 +55,9 @@ do
     states[$repo]="unfinished"
 done
 
-hook_build[fujiwara/nssh]="sleep 3; false"
+hook_build[fujiwara/nssh]="sleep 3;"
 hook_build[b4b4r07/gomi]="sleep 2"
-hook_build[jhawthorn/fzy]="sleep 2; false"
+hook_build[jhawthorn/fzy]="sleep 2"
 
 printf "[zplug] Start to install $#repos plugins in parallel\n\n"
 repeat $(($#repos + 2))
@@ -131,7 +131,7 @@ do
 done
 printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
 
-if [[ -s $hook_rollback ]]; then
+if [[ -f $hook_failure ]] && [[ -s $hook_rollback ]]; then
     printf "\n$fg_bold[red][zplug] These hook-build were failed to run:\n$reset_color"
     sed 's/^/ - /g' "$hook_failure"
     printf "[zplug] To retry these hook-build, please run '$fg_bold[default]zplug --rollback=hook-build$reset_color'.\n"
