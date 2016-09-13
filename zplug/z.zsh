@@ -1,13 +1,7 @@
-sleep 3 &
-sleep 1 &
-sleep 2 &
+typeset -A repo_code
 
-echo $jobstates
-in_array() {
-    arg="$1"
-    shift
-    for a in "$@"
-    do
+repo_code[a/b]=0
+repo_code[c/d]=0
+repo_code[e/f]=1
 
-    done
-}
+echo ${(k)#repo_code[(R)0]}
