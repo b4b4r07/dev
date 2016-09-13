@@ -5,6 +5,7 @@ typeset -F SECONDS=0
 typeset -a spinners sub_spinners repos
 typeset -i spinner_idx subspinner_idx
 typeset    repo
+typeset -i timeout=60
 
 typeset ZPLUG_HOME="."
 typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
@@ -27,6 +28,17 @@ any() {
     for job in "$argv[@]"
     do
         if [[ $jobstates =~ $job ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+any2() {
+    local job
+    for job in "$argv[@]"
+    do
+        if kill -0 "$job" &>/dev/null; then
             return 0
         fi
     done
@@ -56,9 +68,9 @@ do
     states[$repo]="unfinished"
 done
 
-hook_build[fujiwara/nssh]="sleep 3"
+hook_build[fujiwara/nssh]="sleep 4"
 hook_build[b4b4r07/gomi]="sleep 2"
-hook_build[jhawthorn/fzy]="sleep 2"
+hook_build[jhawthorn/fzy]="sleep 3"
 
 printf "[zplug] Start to install $#repos plugins in parallel\n\n"
 repeat $(($#repos + 2))
@@ -99,9 +111,11 @@ do
                         fi
                     } & hook_pids[$repo]=$!
                     {
-                        sleep 2.3
+                        sleep "$timeout"
                         if kill -0 $hook_pids[$repo] &>/dev/null; then
                             kill -9 $hook_pids[$repo] &>/dev/null
+                        #if any2 $hook_pids[$repo] && ! any2 "$repo_pids[@]"; then
+                        #    kill -9 "$hook_pids[$repo]" &>/dev/null
                             printf "$repo\n" >>|"$build_timeout"
                             printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$build_rollback"
                         fi
@@ -138,10 +152,16 @@ do
         printf "[zplug] Elapsed time: %.4f sec.\n" $SECONDS
     fi
 done
+
 printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
 
-if [[ -f $build_failure ]] && [[ -s $build_rollback ]]; then
-    printf "\n$fg_bold[red][zplug] These hook-build were failed to run:\n$reset_color"
-    sed 's/^/ - /g' "$build_failure"
-    printf "[zplug] To retry these hook-build, please run '$fg_bold[default]zplug --rollback=hook-build$reset_color'.\n"
+if [[ -s $build_rollback ]]; then
+    if [[ -f $build_failure ]] || [[ -f $build_timeout ]]; then
+        printf "\n$fg_bold[red][zplug] These hook-build were failed to run:\n$reset_color"
+        {
+            sed 's/^/ - /g' "$build_failure"
+            sed 's/^/ - /g' "$build_timeout"
+        } 2>/dev/null
+        printf "[zplug] To retry these hook-build, please run '$fg_bold[default]zplug --rollback=hook-build$reset_color'.\n"
+    fi
 fi
