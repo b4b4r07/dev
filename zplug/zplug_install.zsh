@@ -1,11 +1,13 @@
 #!/bin/zsh
 
-typeset -A repo_pids states hook_build hook_finished hook_pids
+typeset -A repo_pids states hook_build hook_finished hook_pids repo_code
 typeset -F SECONDS=0
 typeset -a spinners sub_spinners repos
 typeset -i spinner_idx subspinner_idx
 typeset    repo
 typeset -i timeout=60
+
+zmodload zsh/system
 
 typeset ZPLUG_HOME="."
 typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
@@ -13,9 +15,11 @@ typeset build_success="$ZPLUG_MANAGE/.build_success"
 typeset build_failure="$ZPLUG_MANAGE/.build_failure"
 typeset build_timeout="$ZPLUG_MANAGE/.build_timeout"
 typeset build_rollback="$ZPLUG_MANAGE/.build_rollback"
+typeset status_file="$ZPLUG_MANAGE/.status"
 
 mkdir -p "$ZPLUG_MANAGE"
-rm -f "$build_success" "$build_failure" "$build_timeout"
+rm -f "$build_success" "$build_failure" "$build_timeout" "$status_file"
+touch "$status_file"
 
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 sub_spinners=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
@@ -59,13 +63,43 @@ jhawthorn/fzy
 fujiwara/nssh
 )
 
+bool=(
+true
+true
+true
+true
+true
+false
+)
+
 for repo in "$repos[@]"
 do
-    sleep $(( $RANDOM % 3 + 2 )).$(( $RANDOM % 9 + 1 )) &
+    t="$(( $RANDOM % 3 + 2 )).$(( $RANDOM % 9 + 1 ))"
+    b=$bool[$(($RANDOM % $#bool + 1))]
+    {
+        sleep $t; $b
+        ret=$status
+        (
+        zsystem flock -t 180 "$status_file"
+        integer cant_lock=$status
+        if (( cant_lock )); then
+            {
+                # TODO: Output to log
+                echo -n "Can't acquire lock for $status_file."
+                (( cant_lock == 2 )) && echo -n " timeout."
+                echo
+            } >&2
+            # TODO:
+            exit 1
+        fi
+        printf "repo:$repo\tstatus:$ret\n" >>|"$status_file"
+        )
+    } &
     repo_pids[$repo]=$!
     hook_build[$repo]=""
     hook_finished[$repo]=false
     states[$repo]="unfinished"
+    repo_code[$repo]=""
 done
 
 hook_build[fujiwara/nssh]="sleep 4"
@@ -99,6 +133,14 @@ do
         else
             # If repo has build-hook tag
             if [[ -n $hook_build[$repo] ]]; then
+                if [[ -z $repo_code[$repo] ]]; then
+                    repo_code[$repo]="$(grep "^repo:$repo" "$status_file" | awk '{print $2}' | cut -d: -f2)"
+                fi
+                if [[ $repo_code[$repo] != 0 ]]; then
+                    printf " $fg_bold[red]\U2718$reset_color  $fg[red]Failed to do$reset_color   $repo --> hook-build: $fg[red]cancel$reset_color\n"
+                    continue
+                fi
+
                 if ! $hook_finished[$repo]; then
                     hook_finished[$repo]=true
                     {
@@ -138,7 +180,14 @@ do
                     fi
                 fi
             else
-                printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo\n"
+                if [[ -z $repo_code[$repo] ]]; then
+                    repo_code[$repo]="$(grep "^repo:$repo" "$status_file" | awk '{print $2}' | cut -d: -f2)"
+                fi
+                if [[ $repo_code[$repo] == 0 ]]; then
+                    printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo\n"
+                else
+                    printf " $fg_bold[red]\U2718$reset_color  $fg[red]Failed to do$reset_color   $repo\n"
+                fi
             fi
             states[$repo]="finished"
         fi
@@ -153,7 +202,13 @@ do
     fi
 done
 
-printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
+# TODO
+if (( ${(k)#repo_code[(R)0]} == $#states )); then
+    printf "$fg_bold[default] ==> Installation finished successfully!$reset_color\n"
+else
+    printf "$fg_bold[red] ==> Installation failed for following packages:$reset_color\n"
+    printf " - %s\n" ${(k)repo_code[(R)1]}
+fi
 
 if [[ -s $build_rollback ]]; then
     if [[ -f $build_failure ]] || [[ -f $build_timeout ]]; then
