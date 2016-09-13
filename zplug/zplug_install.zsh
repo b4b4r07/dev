@@ -10,10 +10,11 @@ typeset ZPLUG_HOME="."
 typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
 typeset build_success="$ZPLUG_MANAGE/.build_success"
 typeset build_failure="$ZPLUG_MANAGE/.build_failure"
+typeset build_timeout="$ZPLUG_MANAGE/.build_timeout"
 typeset build_rollback="$ZPLUG_MANAGE/.build_rollback"
 
 mkdir -p "$ZPLUG_MANAGE"
-rm -f "$build_success" "$build_failure"
+rm -f "$build_success" "$build_failure" "$build_timeout"
 
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 sub_spinners=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
@@ -91,14 +92,20 @@ do
                     {
                         eval ${=hook_build[$repo]}
                         if (( $status > 0 )); then
-                            # failure
                             printf "$repo\n" >>|"$build_failure"
                             printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$build_rollback"
                         else
-                            # success
                             printf "$repo\n" >>|"$build_success"
                         fi
                     } & hook_pids[$repo]=$!
+                    {
+                        sleep 2.3
+                        if kill -0 $hook_pids[$repo] &>/dev/null; then
+                            kill -9 $hook_pids[$repo] &>/dev/null
+                            printf "$repo\n" >>|"$build_timeout"
+                            printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$build_rollback"
+                        fi
+                    } &
                 fi
 
                 if [[ $jobstates =~ $hook_pids[$repo] ]]; then
@@ -110,6 +117,8 @@ do
                     eraceCurrentLine
                     if [[ -f $build_failure ]] && grep -x "$repo" "$build_failure" &>/dev/null; then
                         printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[red]failure$reset_color\n"
+                    elif [[ -f $build_timeout ]] && grep -x "$repo" "$build_timeout" &>/dev/null; then
+                        printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[yellow]timeout$reset_color\n"
                     else
                         printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo --> hook-build: $fg[green]success$reset_color\n"
                     fi
