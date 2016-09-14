@@ -5,27 +5,32 @@ typeset -F SECONDS=0
 typeset -a spinners sub_spinners repos
 typeset -i spinner_idx subspinner_idx
 typeset    repo
-typeset -i timeout=60
+typeset -i timeout=4
 
 zmodload zsh/system
 
 typeset ZPLUG_HOME="."
 typeset ZPLUG_MANAGE="$ZPLUG_HOME/.zplug"
-typeset build_success="$ZPLUG_MANAGE/.build_success"
-typeset build_failure="$ZPLUG_MANAGE/.build_failure"
-typeset build_timeout="$ZPLUG_MANAGE/.build_timeout"
-typeset build_rollback="$ZPLUG_MANAGE/.build_rollback"
-typeset status_file="$ZPLUG_MANAGE/.status"
+typeset build_success="$ZPLUG_MANAGE/logs/build_success"
+typeset build_failure="$ZPLUG_MANAGE/logs/build_failure"
+typeset build_timeout="$ZPLUG_MANAGE/logs/build_timeout"
+typeset build_rollback="$ZPLUG_MANAGE/logs/build_rollback"
+typeset installed_file="$ZPLUG_MANAGE/logs/installed"
 
-mkdir -p "$ZPLUG_MANAGE"
-rm -f "$build_success" "$build_failure" "$build_timeout" "$status_file"
-touch "$status_file"
+mkdir -p "$ZPLUG_MANAGE/logs"
+rm -f "$build_success" "$build_failure" "$build_timeout" "$installed_file"
+touch "$installed_file"
 
 spinners=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 sub_spinners=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
 sub_spinners=(⠋ ⠙ ⠚ ⠞ ⠖ ⠦ ⠴ ⠲ ⠳ ⠓)
 sub_spinners=(⠋ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋)
 sub_spinners=(⠁ ⠁ ⠉ ⠙ ⠚ ⠒ ⠂ ⠂ ⠒ ⠲ ⠴ ⠤ ⠄ ⠄ ⠤ ⠠ ⠠ ⠤ ⠦ ⠖ ⠒ ⠐ ⠐ ⠒ ⠓ ⠋ ⠉ ⠈ ⠈)
+
+get_status() {
+    local repo="${1:?}"
+    grep "^repo:$repo" "$installed_file" | awk '{print $2}' | cut -d: -f2
+}
 
 any() {
     local job
@@ -49,6 +54,27 @@ any2() {
     return 1
 }
 
+any_one() {
+    local job
+
+    if (( $#jobstates == 0 )); then
+        for job in "$argv[@]"
+        do
+            if kill -0 "$job" &>/dev/null; then
+                return 0
+            fi
+        done
+    else
+        for job in "$argv[@]"
+        do
+            if [[ $jobstates =~ $job ]]; then
+                return 0
+            fi
+        done
+    fi
+    return 1
+}
+
 eraceCurrentLine() {
     printf "\033[2K\r"
 }
@@ -69,6 +95,7 @@ true
 true
 true
 true
+true
 false
 )
 
@@ -80,19 +107,19 @@ do
         sleep $t; $b
         ret=$status
         (
-        zsystem flock -t 180 "$status_file"
+        zsystem flock -t 180 "$installed_file"
         integer cant_lock=$status
         if (( cant_lock )); then
             {
                 # TODO: Output to log
-                echo -n "Can't acquire lock for $status_file."
+                echo -n "Can't acquire lock for $installed_file."
                 (( cant_lock == 2 )) && echo -n " timeout."
                 echo
             } >&2
             # TODO:
             exit 1
         fi
-        printf "repo:$repo\tstatus:$ret\n" >>|"$status_file"
+        printf "repo:$repo\tstatus:$ret\n" >>|"$installed_file"
         )
     } &
     repo_pids[$repo]=$!
@@ -102,7 +129,7 @@ do
     repo_code[$repo]=""
 done
 
-hook_build[fujiwara/nssh]="sleep 4"
+hook_build[fujiwara/nssh]="sleep 5"
 hook_build[b4b4r07/gomi]="sleep 2"
 hook_build[jhawthorn/fzy]="sleep 3"
 
@@ -134,7 +161,7 @@ do
             # If repo has build-hook tag
             if [[ -n $hook_build[$repo] ]]; then
                 if [[ -z $repo_code[$repo] ]]; then
-                    repo_code[$repo]="$(grep "^repo:$repo" "$status_file" | awk '{print $2}' | cut -d: -f2)"
+                    repo_code[$repo]="$(get_status "$repo")"
                 fi
                 if [[ $repo_code[$repo] != 0 ]]; then
                     printf " $fg_bold[red]\U2718$reset_color  $fg[red]Failed to do$reset_color   $repo --> hook-build: $fg[red]cancel$reset_color\n"
@@ -154,10 +181,10 @@ do
                     } & hook_pids[$repo]=$!
                     {
                         sleep "$timeout"
-                        if kill -0 $hook_pids[$repo] &>/dev/null; then
-                            kill -9 $hook_pids[$repo] &>/dev/null
                         #if any2 $hook_pids[$repo] && ! any2 "$repo_pids[@]"; then
-                        #    kill -9 "$hook_pids[$repo]" &>/dev/null
+                        #if kill -0 $hook_pids[$repo] &>/dev/null; then
+                        if any_one $hook_pids[$repo] && ! any_one "$repo_pids[@]"; then
+                            kill -9 $hook_pids[$repo] &>/dev/null
                             printf "$repo\n" >>|"$build_timeout"
                             printf "__zplug::job::hook::build ${(qqq)repo}\n" >>|"$build_rollback"
                         fi
@@ -181,7 +208,7 @@ do
                 fi
             else
                 if [[ -z $repo_code[$repo] ]]; then
-                    repo_code[$repo]="$(grep "^repo:$repo" "$status_file" | awk '{print $2}' | cut -d: -f2)"
+                    repo_code[$repo]="$(get_status "$repo")"
                 fi
                 if [[ $repo_code[$repo] == 0 ]]; then
                     printf " $fg_bold[white]\U2714$reset_color  $fg[green]Installed!$reset_color     $repo\n"
